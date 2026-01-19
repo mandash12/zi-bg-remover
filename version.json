@@ -1,8 +1,8 @@
 {
-    "version": "1.0.2",
-    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.2.json",
+    "version": "1.0.3",
+    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.3.json",
     "patch_base_url": "https://github.com/mandash12/zi-bg-remover/releases/download",
     "full_url": "https://drive.google.com/uc?export=download&id=1nBMYIZkV5odGr-zquY-bvdjmQY3VifHX",
-    "changelog": "v1.0.2 - Update nama model & Penambahan Versi di Window Title. Fix auto-admin update.",
+    "changelog": "v1.0.3 - Fix update process: taskkill sebelum extract, error handling. Update sekarang 100% otomatis.",
     "min_version_for_patch": "1.0.0"
 }

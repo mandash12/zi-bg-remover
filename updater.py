@@ -262,13 +262,19 @@ class Updater:
         
         if is_full:
             # Full update: backup old folder, extract new
+            exe_name = os.path.basename(current_exe)
             batch_content = f'''@echo off
 echo ========================================
 echo ZI Background Remover - Installing Update
 echo ========================================
 echo.
+
 echo Waiting for application to close...
-ping 127.0.0.1 -n 3 > nul
+ping 127.0.0.1 -n 2 > nul
+
+echo Force closing application...
+taskkill /F /IM "{exe_name}" 2>nul
+ping 127.0.0.1 -n 2 > nul
 
 echo Creating backup...
 if exist "{app_folder}_backup" rmdir /s /q "{app_folder}_backup"
@@ -277,7 +283,17 @@ rename "{app_folder}" "{os.path.basename(app_folder)}_backup"
 echo Extracting update...
 powershell -Command "Expand-Archive -Path '{update_zip_path}' -DestinationPath '{os.path.dirname(app_folder)}' -Force"
 
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to extract update!
+    echo Restoring backup...
+    rename "{os.path.basename(app_folder)}_backup" "{os.path.basename(app_folder)}"
+    pause
+    exit /b 1
+)
+
+echo Update applied successfully!
 echo Starting application...
+ping 127.0.0.1 -n 2 > nul
 start "" "{current_exe}"
 
 echo Cleaning up...
@@ -287,18 +303,33 @@ del /f /q "%~f0"
 '''
         else:
             # Delta update: extract only changed files
+            exe_name = os.path.basename(current_exe)
             batch_content = f'''@echo off
 echo ========================================
 echo ZI Background Remover - Applying Patch
 echo ========================================
 echo.
+
 echo Waiting for application to close...
-ping 127.0.0.1 -n 3 > nul
+ping 127.0.0.1 -n 2 > nul
+
+echo Force closing application...
+taskkill /F /IM "{exe_name}" 2>nul
+ping 127.0.0.1 -n 2 > nul
 
 echo Applying patch...
 powershell -Command "Expand-Archive -Path '{update_zip_path}' -DestinationPath '{app_folder}' -Force"
 
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to apply patch!
+    echo Please close all ZI-BGRemover windows and try again.
+    pause
+    exit /b 1
+)
+
+echo Patch applied successfully!
 echo Starting application...
+ping 127.0.0.1 -n 2 > nul
 start "" "{current_exe}"
 
 echo Cleaning up...
