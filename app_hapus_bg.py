@@ -2,7 +2,7 @@ import os
 import sys
 
 # Application Version
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 # Update Server URL (change this to your actual server)
 UPDATE_VERSION_URL = "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/version.json"

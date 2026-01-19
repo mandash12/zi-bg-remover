@@ -270,12 +270,22 @@ echo ========================================
 echo.
 
 echo Waiting for application to close...
-ping 127.0.0.1 -n 2 > nul
+ping 127.0.0.1 -n 3 > nul
 
 echo Force closing application...
 taskkill /F /IM "{exe_name}" 2>nul
-ping 127.0.0.1 -n 2 > nul
 
+echo Waiting for process to fully terminate...
+:waitloop
+tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /i "{exe_name}" >nul
+if %ERRORLEVEL%==0 (
+    echo   Process still running, waiting...
+    ping 127.0.0.1 -n 2 > nul
+    goto waitloop
+)
+echo   Process terminated.
+
+echo.
 echo Creating backup...
 if exist "{app_folder}_backup" rmdir /s /q "{app_folder}_backup"
 rename "{app_folder}" "{os.path.basename(app_folder)}_backup"
@@ -284,6 +294,7 @@ echo Extracting update...
 powershell -Command "Expand-Archive -Path '{update_zip_path}' -DestinationPath '{os.path.dirname(app_folder)}' -Force"
 
 if %ERRORLEVEL% NEQ 0 (
+    echo.
     echo ERROR: Failed to extract update!
     echo Restoring backup...
     rename "{os.path.basename(app_folder)}_backup" "{os.path.basename(app_folder)}"
@@ -291,7 +302,11 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo Update applied successfully!
+echo.
+echo ========================================
+echo   Update applied successfully!
+echo ========================================
+echo.
 echo Starting application...
 ping 127.0.0.1 -n 2 > nul
 start "" "{current_exe}"
@@ -311,23 +326,38 @@ echo ========================================
 echo.
 
 echo Waiting for application to close...
-ping 127.0.0.1 -n 2 > nul
+ping 127.0.0.1 -n 3 > nul
 
 echo Force closing application...
 taskkill /F /IM "{exe_name}" 2>nul
-ping 127.0.0.1 -n 2 > nul
 
+echo Waiting for process to fully terminate...
+:waitloop
+tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /i "{exe_name}" >nul
+if %ERRORLEVEL%==0 (
+    echo   Process still running, waiting...
+    ping 127.0.0.1 -n 2 > nul
+    goto waitloop
+)
+echo   Process terminated.
+
+echo.
 echo Applying patch...
 powershell -Command "Expand-Archive -Path '{update_zip_path}' -DestinationPath '{app_folder}' -Force"
 
 if %ERRORLEVEL% NEQ 0 (
+    echo.
     echo ERROR: Failed to apply patch!
     echo Please close all ZI-BGRemover windows and try again.
     pause
     exit /b 1
 )
 
-echo Patch applied successfully!
+echo.
+echo ========================================
+echo   Patch applied successfully!
+echo ========================================
+echo.
 echo Starting application...
 ping 127.0.0.1 -n 2 > nul
 start "" "{current_exe}"
