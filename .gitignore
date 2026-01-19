@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build
+build/
+dist/
+*.spec
+*.exe
+
+# Temp folders
+temp_full/
+temp_gpu_dll/
+_internal/
+
+# IDE
+.vscode/
+.idea/
+*.user
+
+# Misc
+*.log
+*.tmp
+
+# Large files
+cublasLt64_12_x86-64.zip
+cublasLt64_12_x86-64/
+*.dll
+*.txt
+
+# Secrets
+license_manager.py
+installer/output/

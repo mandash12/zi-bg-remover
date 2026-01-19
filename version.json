@@ -1,0 +1,8 @@
+{
+    "version": "1.0.0",
+    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.0.json",
+    "patch_base_url": "https://github.com/mandash12/zi-bg-remover/releases/download",
+    "full_url": "https://drive.google.com/uc?export=download&id=YOUR_GDRIVE_FILE_ID",
+    "changelog": "Rilis pertama - ZI Advanced Background Remover v1.0.0",
+    "min_version_for_patch": "1.0.0"
+}
