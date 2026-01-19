@@ -2,7 +2,7 @@ import os
 import sys
 
 # Application Version
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.2"
 
 # Update Server URL (change this to your actual server)
 UPDATE_VERSION_URL = "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/version.json"
@@ -53,7 +53,7 @@ except ImportError as e:
 class BackgroundRemoverApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("ZI Advanced Background Remover")
+        self.root.title(f"ZI Advanced Background Remover v{APP_VERSION}")
         self.root.geometry("950x750")
         self.root.resizable(True, True)
         
@@ -101,17 +101,17 @@ class BackgroundRemoverApp:
         # Format: "Display Name": ("internal_model_name", "Description")
         # You can freely change "Display Name" without affecting model loading!
         self.models = {
-            "U2Net (Standar)": ("u2net", "Umum - Model standar untuk kebanyakan gambar"),
-            "U2Net Lite": ("u2netp", "Ringan - Lebih cepat, ukuran lebih kecil"),
-            "U2Net Human": ("u2net_human_seg", "Manusia - Dioptimalkan untuk segmentasi orang"),
-            "U2Net Cloth": ("u2net_cloth_seg", "Pakaian - Untuk parsing pakaian"),
-            "ISNet General": ("isnet-general-use", "Akurasi tinggi untuk umum"),
-            "ISNet Anime": ("isnet-anime", "Dioptimalkan untuk karakter anime/2D"),
+            "Standar": ("u2net", "Umum - Model standar untuk kebanyakan gambar"),
+            "Lite": ("u2netp", "Ringan - Lebih cepat, ukuran lebih kecil"),
+            "Human": ("u2net_human_seg", "Manusia - Dioptimalkan untuk segmentasi orang"),
+            "Cloth": ("u2net_cloth_seg", "Pakaian - Untuk parsing pakaian"),
+            "IsGeneral": ("isnet-general-use", "Akurasi tinggi untuk umum"),
+            "IsAnime": ("isnet-anime", "Dioptimalkan untuk karakter anime/2D"),
             "Silueta": ("silueta", "Mirip u2net tapi ukuran lite"),
-            "BiRefNet": ("birefnet-general", "Model terbaru, akurasi sangat tinggi"),
-            "BiRefNet Lite": ("birefnet-general-lite", "Versi lebih ringan"),
-            "BiRefNet Portrait": ("birefnet-portrait", "Untuk foto portrait/wajah"),
-            "BiRefNet Massive": ("birefnet-massive", "Dilatih dataset besar, paling akurat")
+            "AI PREMIUM": ("birefnet-general", "Model terbaru, akurasi sangat tinggi"),
+            "AI PREMIUM Lite": ("birefnet-general-lite", "Versi lebih ringan"),
+            "AI PREMIUM Portrait": ("birefnet-portrait", "Untuk foto portrait/wajah"),
+            "AI PREMIUM Massive": ("birefnet-massive", "Dilatih dataset besar, paling akurat")
         }
         self.selected_model = ttk.StringVar(value="Silueta")  # Default display name
         
