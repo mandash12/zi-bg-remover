@@ -1,10 +1,10 @@
 {
   "version": "1.0.0",
-  "generated": "2026-01-19T02:48:48.447199",
+  "generated": "2026-01-19T21:11:57.320674",
   "files": {
     "ZI-BGRemover.exe": {
-      "hash": "cda865eb9e0d1b8bc06aa1a2ffd5648d5152374f80483e1ff4704ed05681d6d4",
-      "size": 68867260
+      "hash": "84ce08988c1f2a523d659f62305de7b779e536dde24c5e3392c220cf1bb3c22a",
+      "size": 68852498
     },
     "_internal/base_library.zip": {
       "hash": "b4efb34839dcc8a00c81c9cd0bd33c8277a82387753d2afb49753a44fd8623a2",
@@ -31,8 +31,8 @@
       "size": 703328
     },
     "_internal/license_manager.py": {
-      "hash": "71e0cd5cfac080ba1abf2ec1c07ca2f6050fad70270b0bbc3503cb9a08d6a911",
-      "size": 40901
+      "hash": "7a2b00a4a1973ca30ffaf35b5973f3bb909c743e301a4c8578772c4c94583d1f",
+      "size": 41058
     },
     "_internal/msvcp140.dll": {
       "hash": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
@@ -2799,11 +2799,11 @@
       "size": 867328
     },
     "_internal/pyarmor_runtime_000000/pyarmor_runtime.pyd": {
-      "hash": "1de0a3f03bf2be1b1622620855d094458305b704d1ca8dac881f69466e395781",
+      "hash": "3382d2e490e5f964da86451e78c87a621497c2d26193d799ae7a314880021a6d",
       "size": 634880
     },
     "_internal/pyarmor_runtime_000000/__init__.py": {
-      "hash": "39c367670c810dfeac5f31c2d6b93dd783d0b72311755bbf70e7031cd0a630e1",
+      "hash": "72d86ed35ea21034faa30eb67a3eebe10e6f67e7b7bd648f8c16a6242f59f902",
       "size": 103
     },
     "_internal/pyarrow/array.pxi": {
@@ -32000,5 +32000,5 @@
     }
   },
   "total_files": 7999,
-  "total_size": 7388954274
+  "total_size": 7388939669
 }
