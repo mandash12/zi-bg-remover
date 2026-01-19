@@ -97,21 +97,23 @@ class BackgroundRemoverApp:
         self.after_original_img = None
         self.after_drag_start = None
         
-        # Model Selection
-        self.selected_model = ttk.StringVar(value="silueta")
+        # Model Selection with Display Name Mapping
+        # Format: "Display Name": ("internal_model_name", "Description")
+        # You can freely change "Display Name" without affecting model loading!
         self.models = {
-            "u2net": "Umum - Model standar untuk kebanyakan gambar",
-            "u2netp": "Ringan - Lebih cepat, ukuran lebih kecil",
-            "u2net human seg": "Manusia - Dioptimalkan untuk segmentasi orang",
-            "u2net cloth seg": "Pakaian - Untuk parsing pakaian",
-            "isGen": "Akurasi tinggi untuk umum",
-            "is anime": "Dioptimalkan untuk karakter anime/2D",
-            "silueta": "Mirip u2net tapi ukuran lite",
-            "birGen": "Model terbaru, akurasi sangat tinggi",
-            "birGen lite": "Versi lebih ringan",
-            "birGen portrait": "Untuk foto portrait/wajah",
-            "birGen massive": "Dilatih dataset besar, paling akurat"
+            "U2Net (Standar)": ("u2net", "Umum - Model standar untuk kebanyakan gambar"),
+            "U2Net Lite": ("u2netp", "Ringan - Lebih cepat, ukuran lebih kecil"),
+            "U2Net Human": ("u2net_human_seg", "Manusia - Dioptimalkan untuk segmentasi orang"),
+            "U2Net Cloth": ("u2net_cloth_seg", "Pakaian - Untuk parsing pakaian"),
+            "ISNet General": ("isnet-general-use", "Akurasi tinggi untuk umum"),
+            "ISNet Anime": ("isnet-anime", "Dioptimalkan untuk karakter anime/2D"),
+            "Silueta": ("silueta", "Mirip u2net tapi ukuran lite"),
+            "BiRefNet": ("birefnet-general", "Model terbaru, akurasi sangat tinggi"),
+            "BiRefNet Lite": ("birefnet-general-lite", "Versi lebih ringan"),
+            "BiRefNet Portrait": ("birefnet-portrait", "Untuk foto portrait/wajah"),
+            "BiRefNet Massive": ("birefnet-massive", "Dilatih dataset besar, paling akurat")
         }
+        self.selected_model = ttk.StringVar(value="Silueta")  # Default display name
         
         # Low PC Mode (Resource Saver)
         self.low_pc_mode = ttk.BooleanVar(value=False)
@@ -378,8 +380,9 @@ class BackgroundRemoverApp:
         ttk.Button(model_row, text="ⓘ", width=3, bootstyle="info-outline",
                    command=self.show_model_info).pack(side=RIGHT)
         
-        # Model description
-        self.bulk_model_desc = ttk.Label(model_frame, text=self.models.get(self.selected_model.get(), ""),
+        # Model description (extract description from tuple)
+        initial_model_info = self.models.get(self.selected_model.get(), ("", ""))
+        self.bulk_model_desc = ttk.Label(model_frame, text=initial_model_info[1],
                                           font=("Segoe UI", 9), foreground="gray")
         self.bulk_model_desc.pack(anchor=W, pady=(10, 0))
         
@@ -567,7 +570,8 @@ class BackgroundRemoverApp:
         tk.Label(info_inner, text="ℹ", font=("Segoe UI", 12), fg="#0d6efd", 
                  bg="#d4edfc").pack(side=LEFT, padx=(0, 8))
         
-        self.single_model_desc = tk.Label(info_inner, text=self.models.get(self.selected_model.get(), ""),
+        single_model_info = self.models.get(self.selected_model.get(), ("", ""))
+        self.single_model_desc = tk.Label(info_inner, text=single_model_info[1],
                                            wraplength=200, font=("Segoe UI", 9), 
                                            fg="#0d6efd", bg="#d4edfc", justify=LEFT)
         self.single_model_desc.pack(side=LEFT, fill=X, expand=True)
@@ -682,7 +686,7 @@ class BackgroundRemoverApp:
         """Handle Low PC Mode toggle"""
         if self.low_pc_mode.get():
             # Enable low PC mode - switch to lightweight model
-            self.selected_model.set("silueta")
+            self.selected_model.set("Silueta")  # Use display name
             self.on_model_change()
             self.log_message("[INFO] Mode Hemat AKTIF - Model diubah ke silueta (ringan)")
             self.log_message("[INFO] Gambar besar akan di-resize untuk hemat memori")
@@ -741,10 +745,20 @@ class BackgroundRemoverApp:
             self.log_message(f"[WARN] Gagal resize: {str(e)}")
             return image_data
 
+    def get_internal_model_name(self, display_name):
+        """Get internal model name from display name"""
+        model_info = self.models.get(display_name, (display_name, ""))
+        return model_info[0]  # Return internal name
+    
+    def get_model_description(self, display_name):
+        """Get model description from display name"""
+        model_info = self.models.get(display_name, ("", ""))
+        return model_info[1]  # Return description
+
     def on_model_change(self, event=None):
         """Update description when model changes"""
-        model = self.selected_model.get()
-        desc = self.models.get(model, "")
+        display_name = self.selected_model.get()
+        desc = self.get_model_description(display_name)
         
         # Update bulk model description (ttk.Label)
         if hasattr(self, 'bulk_model_desc'):
@@ -753,19 +767,20 @@ class BackgroundRemoverApp:
         if hasattr(self, 'single_model_desc'):
             self.single_model_desc.config(text=desc)
         
-        self.log_message(f"[INFO] Model changed to: {model}")
+        internal_name = self.get_internal_model_name(display_name)
+        self.log_message(f"[INFO] Model changed to: {display_name} ({internal_name})")
 
 
     def show_model_info(self):
         """Show all models information"""
         info_text = "--- Daftar Model AI ---\n\n"
-        for model, desc in self.models.items():
-            info_text += f"• {model}\n  {desc}\n\n"
+        for display_name, (internal_name, desc) in self.models.items():
+            info_text += f"• {display_name}\n  {desc}\n\n"
         info_text += "TIPS:\n"
-        info_text += "• Untuk foto orang: u2net_human_seg atau birGen-portrait\n"
-        info_text += "• Untuk anime: is anime\n"
-        info_text += "• Untuk kecepatan: u2netp atau silueta\n"
-        info_text += "• Untuk akurasi: birGen massive\n"
+        info_text += "• Untuk foto orang: U2Net Human atau BiRefNet Portrait\n"
+        info_text += "• Untuk anime: ISNet Anime\n"
+        info_text += "• Untuk kecepatan: U2Net Lite atau Silueta\n"
+        info_text += "• Untuk akurasi: BiRefNet Massive\n"
         messagebox.showinfo("Informasi Model", info_text)
 
     def select_input_folder(self):
@@ -934,8 +949,9 @@ class BackgroundRemoverApp:
     def _process_single_thread(self):
         """Thread worker for single image processing"""
         try:
-            model_name = self.selected_model.get()
-            self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model AI: {model_name} ({self.selected_device.get()})..."))
+            display_name = self.selected_model.get()
+            model_name = self.get_internal_model_name(display_name)  # Get internal name for rembg
+            self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model AI: {display_name} ({self.selected_device.get()})..."))
             self.set_device_mode()  # Set CPU/GPU mode
             sess_opts = ort.SessionOptions()
             session = new_session(model_name, sess_opts)
@@ -1234,9 +1250,10 @@ class BackgroundRemoverApp:
 
             self.root.after(0, lambda: self.progress_bar.configure(maximum=len(files), value=0))
             
-            model_name = self.selected_model.get()
+            display_name = self.selected_model.get()
+            model_name = self.get_internal_model_name(display_name)  # Get internal name
             device = self.selected_device.get()
-            self.log_message(f"[LOAD] Memuat model AI: {model_name} ({device})...")
+            self.log_message(f"[LOAD] Memuat model AI: {display_name} ({device})...")
             self.set_device_mode()  # Set CPU/GPU mode
             sess_opts = ort.SessionOptions()
             session = new_session(model_name, sess_opts)
