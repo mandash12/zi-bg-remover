@@ -313,12 +313,37 @@ del /f /q "%~f0"
         print(f"[Updater] Created update script: {batch_path}")
         
         # Launch updater and exit
-        subprocess.Popen(
-            ['cmd', '/c', batch_path],
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-            close_fds=True
-        )
+        # Launch updater with UAC prompt (Run as Administrator)
+        # This is critical for updating apps installed in Program Files
+        try:
+            import ctypes
+            print(f"[Updater] Executing update script as Admin: {batch_path}")
+            
+            # ShellExecuteW(hwnd, operation, file, parameters, directory, show_cmd)
+            # operation "runas" prompts for UAC elevation
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, 
+                "runas", 
+                "cmd.exe", 
+                f'/c "{batch_path}"', 
+                None, 
+                1 # SW_SHOWNORMAL (show console so user sees progress)
+            )
+            
+            if ret <= 32:
+                # If ShellExecute failed, raise exception
+                raise Exception(f"ShellExecute failed with return code {ret}")
+                
+        except Exception as e:
+            print(f"[Updater] Failed to elevate, trying normal Popen: {e}")
+            # Fallback for non-admin installs or if execution fails
+            subprocess.Popen(
+                ['cmd', '/c', batch_path],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                close_fds=True
+            )
         
+        # Exit application to allow overwrite
         sys.exit(0)
     
     def cancel_download(self):
