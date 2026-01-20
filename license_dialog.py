@@ -36,6 +36,18 @@ class LicenseDialog:
         self.dialog.geometry("500x400")
         self.dialog.resizable(False, False)
         
+        # Set application icon
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
+            if os.path.exists(icon_path):
+                from PIL import Image, ImageTk
+                icon_image = Image.open(icon_path)
+                icon_photo = ImageTk.PhotoImage(icon_image)
+                self.dialog.iconphoto(True, icon_photo)
+                self._icon_photo = icon_photo  # Keep reference
+        except Exception as e:
+            print(f"[WARN] Could not set dialog icon: {e}")
+        
         # Center on screen
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() - 500) // 2
@@ -68,14 +80,14 @@ class LicenseDialog:
         
         ttk.Label(header_text, text="Aktivasi Lisensi", 
                   font=("Segoe UI", 18, "bold")).pack(anchor=W)
-        ttk.Label(header_text, text="Masukkan license key dari penjual",
+        ttk.Label(header_text, text="Masukkan license key",
                   font=("Segoe UI", 10), foreground="#adb5bd").pack(anchor=W)
         
         # License Key Input Section
         license_frame = ttk.Labelframe(main_frame, text="License Key", padding=15)
         license_frame.pack(fill=X, pady=(0, 15))
         
-        ttk.Label(license_frame, text="Paste license key yang diberikan oleh penjual:",
+        ttk.Label(license_frame, text="Paste license key disini:",
                   font=("Segoe UI", 9)).pack(anchor=W, pady=(0, 10))
         
         self.license_text = tk.Text(license_frame, height=4, font=("Consolas", 10),

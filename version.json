@@ -1,8 +1,8 @@
 {
-    "version": "1.0.4",
-    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.4.json",
+    "version": "1.0.5",
+    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.5.json",
     "patch_base_url": "https://github.com/mandash12/zi-bg-remover/releases/download",
     "full_url": "https://drive.google.com/uc?export=download&id=1nBMYIZkV5odGr-zquY-bvdjmQY3VifHX",
-    "changelog": "v1.0.4 - Fix update process: wait loop untuk memastikan proses benar-benar selesai sebelum extract.",
+    "changelog": "Fix bug dan optimasi",
     "min_version_for_patch": "1.0.0"
 }

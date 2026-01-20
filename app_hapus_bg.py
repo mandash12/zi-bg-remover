@@ -2,7 +2,7 @@ import os
 import sys
 
 # Application Version
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 
 # Update Server URL (change this to your actual server)
 UPDATE_VERSION_URL = "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/version.json"
@@ -107,7 +107,7 @@ class BackgroundRemoverApp:
             "Cloth": ("u2net_cloth_seg", "Pakaian - Untuk parsing pakaian"),
             "IsGeneral": ("isnet-general-use", "Akurasi tinggi untuk umum"),
             "IsAnime": ("isnet-anime", "Dioptimalkan untuk karakter anime/2D"),
-            "Silueta": ("silueta", "Mirip u2net tapi ukuran lite"),
+            "Silueta": ("silueta", "Mirip Standar tapi ukuran lite"),
             "AI PREMIUM": ("birefnet-general", "Model terbaru, akurasi sangat tinggi"),
             "AI PREMIUM Lite": ("birefnet-general-lite", "Versi lebih ringan"),
             "AI PREMIUM Portrait": ("birefnet-portrait", "Untuk foto portrait/wajah"),
@@ -777,10 +777,10 @@ class BackgroundRemoverApp:
         for display_name, (internal_name, desc) in self.models.items():
             info_text += f"• {display_name}\n  {desc}\n\n"
         info_text += "TIPS:\n"
-        info_text += "• Untuk foto orang: U2Net Human atau BiRefNet Portrait\n"
-        info_text += "• Untuk anime: ISNet Anime\n"
-        info_text += "• Untuk kecepatan: U2Net Lite atau Silueta\n"
-        info_text += "• Untuk akurasi: BiRefNet Massive\n"
+        info_text += "• Untuk foto orang: Human atau AI PREMIUM Portrait\n"
+        info_text += "• Untuk anime: IsAnime\n"
+        info_text += "• Untuk kecepatan: Lite atau Silueta\n"
+        info_text += "• Untuk akurasi: AI PREMIUM Massive\n"
         messagebox.showinfo("Informasi Model", info_text)
 
     def select_input_folder(self):
@@ -951,10 +951,16 @@ class BackgroundRemoverApp:
         try:
             display_name = self.selected_model.get()
             model_name = self.get_internal_model_name(display_name)  # Get internal name for rembg
-            self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model AI: {display_name} ({self.selected_device.get()})..."))
+            
+            # Check if model might need downloading (first time use)
+            self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model AI: {display_name}..."))
+            self.root.after(0, lambda: self.log_message("[INFO] Jika pertama kali, model akan didownload (~150-300MB). Mohon tunggu..."))
+            
             self.set_device_mode()  # Set CPU/GPU mode
             sess_opts = ort.SessionOptions()
             session = new_session(model_name, sess_opts)
+            
+            self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} berhasil dimuat!"))
             
             # Check actual provider used and VRAM
             actual_providers = session.inner_session.get_providers()
@@ -968,7 +974,7 @@ class BackgroundRemoverApp:
                 except: pass
             
             used_provider = "GPU" if any("CUDA" in p or "TensorRT" in p for p in actual_providers) else "CPU"
-            self.root.after(0, lambda: self.log_message(f"[INFO] Model siap. Provider: {actual_providers[0]} ({used_provider}){vram_msg}"))
+            self.root.after(0, lambda: self.log_message(f"[INFO] Provider: {actual_providers[0]} ({used_provider}){vram_msg}"))
             
             with open(self.single_input_path, 'rb') as f:
                 input_data = f.read()
@@ -1452,6 +1458,26 @@ class BackgroundRemoverApp:
         self.log_message("[INFO] Download dibatalkan.")
 
 if __name__ == "__main__":
+    # Track if user just activated license (to skip splash)
+    _just_activated = False
+    
+    # Helper function to load app icon
+    def get_app_icon_path():
+        return os.path.join(os.path.dirname(__file__), "icon.png")
+    
+    def set_window_icon(window):
+        """Set application icon on a window."""
+        try:
+            icon_path = get_app_icon_path()
+            if os.path.exists(icon_path):
+                icon_image = Image.open(icon_path)
+                icon_photo = ImageTk.PhotoImage(icon_image)
+                window.iconphoto(True, icon_photo)
+                # Keep reference to prevent garbage collection
+                window._app_icon = icon_photo
+        except Exception as e:
+            print(f"[WARN] Could not set icon: {e}")
+    
     # === 1. LICENSE CHECK FIRST ===
     try:
         from license_manager import LicenseManager
@@ -1467,62 +1493,78 @@ if __name__ == "__main__":
             
             if not result:
                 sys.exit(0)
+            
+            # User just activated, skip splash to avoid Tkinter conflicts
+            _just_activated = True
                 
     except ImportError as e:
         print(f"[WARN] License module not found: {e}")
     except Exception as e:
         print(f"[WARN] License check error: {e}")
     
-    # === 2. SPLASH SCREEN (Only shown after license is valid) ===
-    def show_splash():
-        splash = tk.Tk()
-        splash.overrideredirect(True)
+    # === 2. SPLASH SCREEN (Only shown if NOT just activated) ===
+    if not _just_activated:
+        def show_splash():
+            splash = tk.Tk()
+            splash.overrideredirect(True)
+            
+            # Set icon
+            try:
+                icon_path = get_app_icon_path()
+                if os.path.exists(icon_path):
+                    icon_image = Image.open(icon_path)
+                    icon_photo = ImageTk.PhotoImage(icon_image)
+                    splash.iconphoto(True, icon_photo)
+                    splash._icon = icon_photo
+            except:
+                pass
+            
+            screen_width = splash.winfo_screenwidth()
+            screen_height = splash.winfo_screenheight()
+            splash_width, splash_height = 600, 350
+            x = (screen_width - splash_width) // 2
+            y = (screen_height - splash_height) // 2
+            splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+            splash.configure(bg="white")
+            
+            try:
+                splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
+                splash_img = Image.open(splash_path)
+                splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
+                splash_photo = ImageTk.PhotoImage(splash_img)
+                img_label = tk.Label(splash, image=splash_photo, bg="white")
+                img_label.image = splash_photo
+                img_label.pack(pady=(40, 20))
+            except:
+                tk.Label(splash, text="ZI Advanced Background Remover", 
+                         font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
+            
+            tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
+                     fg="#666", bg="white").pack(pady=10)
+            
+            progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
+            progress_frame.pack(pady=10)
+            progress_frame.pack_propagate(False)
+            progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
+            progress_bar.place(x=0, y=0)
+            
+            tk.Label(splash, text=f"v{APP_VERSION} © 2026 ZI Advanced Background Remover", 
+                     font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
+            
+            def animate(w=0):
+                if w <= 400:
+                    progress_bar.configure(width=w)
+                    splash.after(8, lambda: animate(w + 5))
+                else:
+                    splash.destroy()
+            
+            animate()
+            splash.mainloop()
         
-        screen_width = splash.winfo_screenwidth()
-        screen_height = splash.winfo_screenheight()
-        splash_width, splash_height = 600, 350
-        x = (screen_width - splash_width) // 2
-        y = (screen_height - splash_height) // 2
-        splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
-        splash.configure(bg="white")
-        
-        try:
-            splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
-            splash_img = Image.open(splash_path)
-            splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
-            splash_photo = ImageTk.PhotoImage(splash_img)
-            img_label = tk.Label(splash, image=splash_photo, bg="white")
-            img_label.image = splash_photo
-            img_label.pack(pady=(40, 20))
-        except:
-            tk.Label(splash, text="ZI Advanced Background Remover", 
-                     font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
-        
-        tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
-                 fg="#666", bg="white").pack(pady=10)
-        
-        progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
-        progress_frame.pack(pady=10)
-        progress_frame.pack_propagate(False)
-        progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
-        progress_bar.place(x=0, y=0)
-        
-        tk.Label(splash, text="v1.0.0 © 2026 ZI Advanced Background Remover", 
-                 font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
-        
-        def animate(w=0):
-            if w <= 400:
-                progress_bar.configure(width=w)
-                splash.after(8, lambda: animate(w + 5))
-            else:
-                splash.destroy()
-        
-        animate()
-        splash.mainloop()
-    
-    show_splash()
+        show_splash()
     
     # === 3. MAIN APP ===
     app = ttk.Window(themename="minty")
+    set_window_icon(app)
     BackgroundRemoverApp(app)
     app.mainloop()
