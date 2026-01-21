@@ -1,8 +1,8 @@
 {
-    "version": "1.0.5",
-    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.5.json",
+    "version": "1.0.6",
+    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.6.json",
     "patch_base_url": "https://github.com/mandash12/zi-bg-remover/releases/download",
     "full_url": "https://drive.google.com/uc?export=download&id=1nBMYIZkV5odGr-zquY-bvdjmQY3VifHX",
-    "changelog": "Fix bug dan optimasi",
+    "changelog": "Smart model detection, fix force close after license activation",
     "min_version_for_patch": "1.0.0"
 }

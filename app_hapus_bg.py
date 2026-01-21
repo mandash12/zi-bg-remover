@@ -2,7 +2,7 @@ import os
 import sys
 
 # Application Version
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 # Update Server URL (change this to your actual server)
 UPDATE_VERSION_URL = "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/version.json"
@@ -952,15 +952,29 @@ class BackgroundRemoverApp:
             display_name = self.selected_model.get()
             model_name = self.get_internal_model_name(display_name)  # Get internal name for rembg
             
-            # Check if model might need downloading (first time use)
-            self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model AI: {display_name}..."))
-            self.root.after(0, lambda: self.log_message("[INFO] Jika pertama kali, model akan didownload (~150-300MB). Mohon tunggu..."))
+            # Check if model already exists locally
+            model_dir = os.path.join(os.path.expanduser("~"), ".u2net")
+            model_file = os.path.join(model_dir, f"{model_name}.onnx")
+            
+            if os.path.exists(model_file):
+                # Model exists, show file size
+                model_size_mb = os.path.getsize(model_file) / (1024 * 1024)
+                self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model lokal: {display_name} ({model_size_mb:.1f} MB)..."))
+            else:
+                # Model needs download
+                self.root.after(0, lambda: self.log_message(f"[DOWNLOAD] Model {display_name} belum ada di lokal."))
+                self.root.after(0, lambda: self.log_message("[DOWNLOAD] Mengunduh model (~150-300MB)... Mohon tunggu, ini hanya sekali."))
             
             self.set_device_mode()  # Set CPU/GPU mode
             sess_opts = ort.SessionOptions()
             session = new_session(model_name, sess_opts)
             
-            self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} berhasil dimuat!"))
+            # Confirm model loaded
+            if os.path.exists(model_file):
+                model_size_mb = os.path.getsize(model_file) / (1024 * 1024)
+                self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} siap! ({model_size_mb:.1f} MB)"))
+            else:
+                self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} berhasil dimuat!"))
             
             # Check actual provider used and VRAM
             actual_providers = session.inner_session.get_providers()
@@ -1458,9 +1472,6 @@ class BackgroundRemoverApp:
         self.log_message("[INFO] Download dibatalkan.")
 
 if __name__ == "__main__":
-    # Track if user just activated license (to skip splash)
-    _just_activated = False
-    
     # Helper function to load app icon
     def get_app_icon_path():
         return os.path.join(os.path.dirname(__file__), "icon.png")
@@ -1473,12 +1484,21 @@ if __name__ == "__main__":
                 icon_image = Image.open(icon_path)
                 icon_photo = ImageTk.PhotoImage(icon_image)
                 window.iconphoto(True, icon_photo)
-                # Keep reference to prevent garbage collection
                 window._app_icon = icon_photo
         except Exception as e:
             print(f"[WARN] Could not set icon: {e}")
     
-    # === 1. LICENSE CHECK FIRST ===
+    # === CREATE PERSISTENT ROOT WINDOW (Hidden) ===
+    # This root window persists throughout the app lifecycle
+    # to prevent Tkinter state corruption after license dialog
+    root = tk.Tk()
+    root.withdraw()  # Hide initially
+    
+    # Track if license was just activated
+    _just_activated = False
+    _license_valid = False
+    
+    # === 1. LICENSE CHECK ===
     try:
         from license_manager import LicenseManager
         from license_dialog import LicenseDialog
@@ -1487,84 +1507,86 @@ if __name__ == "__main__":
         is_valid, msg = lm.is_licensed()
         
         if not is_valid:
-            # Show license dialog (creates its own window)
-            dialog = LicenseDialog(parent=None)
+            # Show license dialog as Toplevel of our persistent root
+            dialog = LicenseDialog(parent=root)
             result = dialog.show()
             
             if not result:
+                root.destroy()
                 sys.exit(0)
             
-            # User just activated, skip splash to avoid Tkinter conflicts
             _just_activated = True
+            _license_valid = True
+        else:
+            _license_valid = True
                 
     except ImportError as e:
         print(f"[WARN] License module not found: {e}")
+        _license_valid = True  # Allow running without license module
     except Exception as e:
         print(f"[WARN] License check error: {e}")
+        _license_valid = True  # Allow running on error
     
-    # === 2. SPLASH SCREEN (Only shown if NOT just activated) ===
+    # === 2. SPLASH SCREEN (Only if NOT just activated) ===
     if not _just_activated:
-        def show_splash():
-            splash = tk.Tk()
-            splash.overrideredirect(True)
-            
-            # Set icon
-            try:
-                icon_path = get_app_icon_path()
-                if os.path.exists(icon_path):
-                    icon_image = Image.open(icon_path)
-                    icon_photo = ImageTk.PhotoImage(icon_image)
-                    splash.iconphoto(True, icon_photo)
-                    splash._icon = icon_photo
-            except:
-                pass
-            
-            screen_width = splash.winfo_screenwidth()
-            screen_height = splash.winfo_screenheight()
-            splash_width, splash_height = 600, 350
-            x = (screen_width - splash_width) // 2
-            y = (screen_height - splash_height) // 2
-            splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
-            splash.configure(bg="white")
-            
-            try:
-                splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
-                splash_img = Image.open(splash_path)
-                splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
-                splash_photo = ImageTk.PhotoImage(splash_img)
-                img_label = tk.Label(splash, image=splash_photo, bg="white")
-                img_label.image = splash_photo
-                img_label.pack(pady=(40, 20))
-            except:
-                tk.Label(splash, text="ZI Advanced Background Remover", 
-                         font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
-            
-            tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
-                     fg="#666", bg="white").pack(pady=10)
-            
-            progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
-            progress_frame.pack(pady=10)
-            progress_frame.pack_propagate(False)
-            progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
-            progress_bar.place(x=0, y=0)
-            
-            tk.Label(splash, text=f"v{APP_VERSION} © 2026 ZI Advanced Background Remover", 
-                     font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
-            
-            def animate(w=0):
-                if w <= 400:
-                    progress_bar.configure(width=w)
-                    splash.after(8, lambda: animate(w + 5))
-                else:
-                    splash.destroy()
-            
-            animate()
-            splash.mainloop()
+        # Create splash as Toplevel
+        splash = tk.Toplevel(root)
+        splash.overrideredirect(True)
         
-        show_splash()
-    
-    # === 3. MAIN APP ===
-    app = ttk.Window(themename="minty")
-    set_window_icon(app)
-    BackgroundRemoverApp(app)
-    app.mainloop()
+        screen_width = splash.winfo_screenwidth()
+        screen_height = splash.winfo_screenheight()
+        splash_width, splash_height = 600, 350
+        x = (screen_width - splash_width) // 2
+        y = (screen_height - splash_height) // 2
+        splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+        splash.configure(bg="white")
+        
+        try:
+            splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
+            splash_img = Image.open(splash_path)
+            splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
+            splash_photo = ImageTk.PhotoImage(splash_img)
+            img_label = tk.Label(splash, image=splash_photo, bg="white")
+            img_label.image = splash_photo
+            img_label.pack(pady=(40, 20))
+        except:
+            tk.Label(splash, text="ZI Advanced Background Remover", 
+                     font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
+        
+        tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
+                 fg="#666", bg="white").pack(pady=10)
+        
+        progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
+        progress_frame.pack(pady=10)
+        progress_frame.pack_propagate(False)
+        progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
+        progress_bar.place(x=0, y=0)
+        
+        tk.Label(splash, text=f"v{APP_VERSION} © 2026 ZI Advanced Background Remover", 
+                 font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
+        
+        def animate_splash(w=0):
+            if w <= 400:
+                progress_bar.configure(width=w)
+                splash.after(8, lambda: animate_splash(w + 5))
+            else:
+                splash.destroy()
+                show_main_app()
+        
+        def show_main_app():
+            # Destroy hidden root and create themed window for main app
+            root.destroy()
+            app = ttk.Window(themename="minty")
+            set_window_icon(app)
+            BackgroundRemoverApp(app)
+            app.mainloop()
+        
+        animate_splash()
+        root.mainloop()
+    else:
+        # User just activated license, skip splash and go directly to main app
+        root.destroy()
+        app = ttk.Window(themename="minty")
+        set_window_icon(app)
+        BackgroundRemoverApp(app)
+        app.mainloop()
