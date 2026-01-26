@@ -594,7 +594,7 @@ if __name__ == '__main__':
     print("ZI Updater Module with Sequential Patch Support")
     print("=" * 50)
     print("Features:")
-    print("  - Sequential patch updates (1.0.5 -> 1.0.6 -> 1.0.8)")
+    print("  - Sequential patch updates (1.0.5 -> 1.0.6 -> 1.0.7 -> 1.0.8)")
     print("  - Automatic patch chain detection")
     print("  - Full update fallback for old versions")
     print("  - Single restart after all patches applied")
