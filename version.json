@@ -1,8 +1,22 @@
 {
-    "version": "1.0.6",
-    "manifest_url": "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/manifest_v1.0.6.json",
-    "patch_base_url": "https://github.com/mandash12/zi-bg-remover/releases/download",
-    "full_url": "https://drive.google.com/uc?export=download&id=1nBMYIZkV5odGr-zquY-bvdjmQY3VifHX",
-    "changelog": "Smart model detection, fix force close after license activation",
-    "min_version_for_patch": "1.0.0"
+    "version": "1.0.8",
+    "full_url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.8/ZI-BGRemover-v1.0.8-Portable.zip",
+    "changelog": "v1.0.8: Fixed model download error for first-time users, added sequential patch updates",
+    "min_supported_version": "1.0.5",
+    "patches": [
+        {
+            "from": "1.0.5",
+            "to": "1.0.6",
+            "url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.6/patch_1.0.5_to_1.0.6.zip",
+            "size": 68693638,
+            "changelog": "Smart model detection, fix force close after license activation"
+        },
+        {
+            "from": "1.0.6",
+            "to": "1.0.8",
+            "url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.8/patch_1.0.6_to_1.0.8.zip",
+            "size": 68699000,
+            "changelog": "Fixed model download error for first-time users, added sequential patch updates"
+        }
+    ]
 }

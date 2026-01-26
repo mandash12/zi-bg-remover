@@ -1,0 +1,29 @@
+{
+    "version": "1.0.8",
+    "full_url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.8/ZI_BGRemover_v1.0.8_Full.zip",
+    "changelog": "v1.0.8: Fixed model download error for first-time users",
+    "min_supported_version": "1.0.5",
+    "patches": [
+        {
+            "from": "1.0.5",
+            "to": "1.0.6",
+            "url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.6/patch_1.0.5_to_1.0.6.zip",
+            "size": 125000,
+            "changelog": "Fixed license activation error"
+        },
+        {
+            "from": "1.0.6",
+            "to": "1.0.7",
+            "url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.7/patch_1.0.6_to_1.0.7.zip",
+            "size": 98000,
+            "changelog": "Updated model download logging"
+        },
+        {
+            "from": "1.0.7",
+            "to": "1.0.8",
+            "url": "https://github.com/mandash12/zi-bg-remover/releases/download/v1.0.8/patch_1.0.7_to_1.0.8.zip",
+            "size": 45000,
+            "changelog": "Fixed NoneType write error during first model download"
+        }
+    ]
+}

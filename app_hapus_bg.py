@@ -2,10 +2,23 @@ import os
 import sys
 
 # Application Version
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.8"
 
 # Update Server URL (change this to your actual server)
 UPDATE_VERSION_URL = "https://raw.githubusercontent.com/mandash12/zi-bg-remover/main/version.json"
+
+# --- FIX: Redirect stdout/stderr for GUI mode (prevents NoneType write error during model download) ---
+# When running as a GUI app without console (e.g., pythonw.exe), sys.stdout and sys.stderr are None
+# This causes errors when libraries like pooch/rembg try to print download progress
+class NullWriter:
+    """Null writer that silently discards all write operations"""
+    def write(self, text): pass
+    def flush(self): pass
+
+if sys.stdout is None:
+    sys.stdout = NullWriter()
+if sys.stderr is None:
+    sys.stderr = NullWriter()
 
 # --- BAGIAN PENCEGAHAN ERROR DLL (Wajib di Paling Atas) ---
 try:
@@ -768,7 +781,7 @@ class BackgroundRemoverApp:
             self.single_model_desc.config(text=desc)
         
         internal_name = self.get_internal_model_name(display_name)
-        self.log_message(f"[INFO] Model changed to: {display_name} ({internal_name})")
+        self.log_message(f"[INFO] Model changed to: {display_name}")
 
 
     def show_model_info(self):
@@ -952,29 +965,41 @@ class BackgroundRemoverApp:
             display_name = self.selected_model.get()
             model_name = self.get_internal_model_name(display_name)  # Get internal name for rembg
             
+            # Known model sizes (in MB) - actual ONNX file sizes
+            MODEL_SIZES = {
+                "u2net": 171,
+                "u2netp": 4.7,
+                "u2net_human_seg": 171,
+                "u2net_cloth_seg": 172,
+                "isnet-general-use": 174,
+                "isnet-anime": 171,
+                "silueta": 43,
+                "birefnet-general": 949,
+                "birefnet-general-lite": 218,
+                "birefnet-portrait": 949,
+                "birefnet-massive": 949,
+                "sam": 375,
+            }
+            
             # Check if model already exists locally
             model_dir = os.path.join(os.path.expanduser("~"), ".u2net")
             model_file = os.path.join(model_dir, f"{model_name}.onnx")
             
             if os.path.exists(model_file):
-                # Model exists, show file size
-                model_size_mb = os.path.getsize(model_file) / (1024 * 1024)
-                self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model lokal: {display_name} ({model_size_mb:.1f} MB)..."))
+                # Model exists locally - simple log
+                self.root.after(0, lambda: self.log_message(f"[LOAD] Memuat model lokal: {display_name}..."))
             else:
-                # Model needs download
-                self.root.after(0, lambda: self.log_message(f"[DOWNLOAD] Model {display_name} belum ada di lokal."))
-                self.root.after(0, lambda: self.log_message("[DOWNLOAD] Mengunduh model (~150-300MB)... Mohon tunggu, ini hanya sekali."))
+                # Model needs download - show size
+                model_size = MODEL_SIZES.get(model_name, 150)  # Default 150MB if unknown
+                self.root.after(0, lambda ms=model_size: self.log_message(f"[DOWNLOAD] Model {display_name} belum ada. Mengunduh ({ms} MB)..."))
+                self.root.after(0, lambda: self.log_message("[DOWNLOAD] Mohon tunggu, ini hanya dilakukan sekali."))
             
             self.set_device_mode()  # Set CPU/GPU mode
             sess_opts = ort.SessionOptions()
             session = new_session(model_name, sess_opts)
             
             # Confirm model loaded
-            if os.path.exists(model_file):
-                model_size_mb = os.path.getsize(model_file) / (1024 * 1024)
-                self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} siap! ({model_size_mb:.1f} MB)"))
-            else:
-                self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} berhasil dimuat!"))
+            self.root.after(0, lambda: self.log_message(f"[OK] Model {display_name} siap digunakan!"))
             
             # Check actual provider used and VRAM
             actual_providers = session.inner_session.get_providers()
@@ -1372,51 +1397,98 @@ class BackgroundRemoverApp:
         threading.Thread(target=check_thread, daemon=True).start()
     
     def show_update_dialog(self, info: dict, updater):
-        """Show update available dialog."""
+        """Show update available dialog with sequential patch info."""
         new_version = info.get('version', 'Unknown')
         changelog = info.get('changelog', 'No changelog.')
         
-        message = (
-            f"Versi baru tersedia!\n\n"
-            f"Versi saat ini: v{APP_VERSION}\n"
-            f"Versi terbaru: v{new_version}\n\n"
-            f"Changelog:\n{changelog}\n\n"
-            f"Apakah Anda ingin mengunduh dan menginstall update sekarang?"
-        )
+        # Check if sequential update is possible
+        can_use_seq, patch_chain, chain_info = updater.can_use_sequential_update(info)
+        
+        if can_use_seq and chain_info:
+            # Format size
+            total_bytes = chain_info['total_size']
+            if total_bytes >= 1024 * 1024:
+                size_str = f"{total_bytes / (1024 * 1024):.1f} MB"
+            elif total_bytes >= 1024:
+                size_str = f"{total_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{total_bytes} B"
+            
+            # Build combined changelog
+            combined_changelog = "\n".join(chain_info['changelogs']) if chain_info['changelogs'] else changelog
+            
+            message = (
+                f"🎉 Update Tersedia!\n\n"
+                f"📍 Path update: {chain_info['version_path_str']}\n"
+                f"📦 Total patch: {chain_info['patch_count']} file ({size_str})\n\n"
+                f"📝 Changelog:\n{combined_changelog}\n\n"
+                f"Aplikasi akan mengunduh dan menerapkan patch secara berurutan.\n"
+                f"Anda hanya perlu restart sekali setelah semua patch diterapkan.\n\n"
+                f"Lanjutkan update?"
+            )
+        else:
+            # Full update needed
+            message = (
+                f"🎉 Update Tersedia!\n\n"
+                f"Versi saat ini: v{APP_VERSION}\n"
+                f"Versi terbaru: v{new_version}\n\n"
+                f"⚠️ Versi Anda terlalu lama untuk patch update.\n"
+                f"Aplikasi akan mengunduh full version.\n\n"
+                f"📝 Changelog:\n{changelog}\n\n"
+                f"Lanjutkan update?"
+            )
         
         if messagebox.askyesno("Update Tersedia", message):
-            self.start_update(info, updater)
+            self.start_update(info, updater, can_use_seq, chain_info)
     
-    def start_update(self, update_info: dict, updater):
+    def start_update(self, update_info: dict, updater, use_sequential: bool = False, chain_info: dict = None):
         """Start downloading and installing the update."""
         self.log_message("[INFO] Mengunduh update...")
         
         # Create progress dialog
         self.update_dialog = tk.Toplevel(self.root)
         self.update_dialog.title("Mengunduh Update")
-        self.update_dialog.geometry("400x150")
+        self.update_dialog.geometry("450x200")
         self.update_dialog.resizable(False, False)
         self.update_dialog.transient(self.root)
         self.update_dialog.grab_set()
         
         # Center the dialog
         self.update_dialog.update_idletasks()
-        x = (self.update_dialog.winfo_screenwidth() // 2) - (400 // 2)
-        y = (self.update_dialog.winfo_screenheight() // 2) - (150 // 2)
+        x = (self.update_dialog.winfo_screenwidth() // 2) - (450 // 2)
+        y = (self.update_dialog.winfo_screenheight() // 2) - (200 // 2)
         self.update_dialog.geometry(f"+{x}+{y}")
         
         frame = ttk.Frame(self.update_dialog, padding=20)
         frame.pack(fill=BOTH, expand=True)
         
-        ttk.Label(frame, text="Mengunduh update...", font=("Segoe UI", 11)).pack(pady=(0, 10))
+        # Title label
+        if use_sequential and chain_info:
+            title_text = f"📦 Sequential Update: {chain_info['version_path_str']}"
+        else:
+            title_text = "📦 Mengunduh Full Update..."
         
+        self.update_title_label = ttk.Label(frame, text=title_text, 
+                                             font=("Segoe UI", 10, "bold"),
+                                             wraplength=400)
+        self.update_title_label.pack(pady=(0, 5))
+        
+        # Step label (for sequential updates)
+        self.update_step_label = ttk.Label(frame, text="Mempersiapkan...", 
+                                           font=("Segoe UI", 9),
+                                           foreground="#6c757d")
+        self.update_step_label.pack(pady=(0, 10))
+        
+        # Progress bar
         self.update_progress = ttk.Progressbar(frame, bootstyle="info-striped", 
-                                                mode="determinate", length=350)
+                                                mode="determinate", length=400)
         self.update_progress.pack(pady=5)
         
+        # Progress label
         self.update_label = ttk.Label(frame, text="0%", font=("Segoe UI", 9))
         self.update_label.pack()
         
+        # Cancel button
         btn_cancel = ttk.Button(frame, text="Batal", bootstyle="danger-outline",
                                  command=lambda: self.cancel_update(updater))
         btn_cancel.pack(pady=(10, 0))
@@ -1425,11 +1497,11 @@ class BackgroundRemoverApp:
         self._current_updater = updater
         self._current_update_info = update_info
         
-        # Start async download with delta update support
+        # Start async download
         updater.download_and_apply_async(
             update_info,
-            use_delta=True,  # Try delta update first
             progress_callback=self.on_download_progress,
+            step_callback=self.on_download_step,
             complete_callback=self.on_download_complete,
             error_callback=self.on_download_error
         )
@@ -1445,22 +1517,74 @@ class BackgroundRemoverApp:
             self.root.after(0, lambda: self.update_label.configure(
                 text=f"{percent}% ({mb_downloaded:.1f} MB / {mb_total:.1f} MB)"))
     
-    def on_download_complete(self, path: str, is_full: bool = False):
+    def on_download_step(self, current_step: int, total_steps: int, from_ver: str, to_ver: str):
+        """Update step progress for sequential updates."""
+        step_text = f"Patch {current_step}/{total_steps}: v{from_ver} → v{to_ver}"
+        self.root.after(0, lambda: self.update_step_label.configure(text=step_text))
+        self.root.after(0, lambda: self.update_progress.configure(value=0))
+        self.log_message(f"[INFO] Downloading {step_text}")
+    
+    def on_download_complete(self, path_or_paths, is_full: bool = False):
         """Handle download completion."""
-        self.root.after(0, lambda: self.update_dialog.destroy())
+        def safe_destroy():
+            try:
+                if hasattr(self, 'update_dialog') and self.update_dialog.winfo_exists():
+                    self.update_dialog.destroy()
+            except Exception:
+                pass
         
-        update_type = "full" if is_full else "delta (hanya file yang berubah)"
-        self.log_message(f"[INFO] Download {update_type} selesai: {path}")
+        self.root.after(0, safe_destroy)
         
-        if messagebox.askyesno("Update", 
-            f"Download selesai!\n\nTipe update: {update_type}\n\nAplikasi akan ditutup dan diperbarui.\nLanjutkan?"):
-            self._current_updater.apply_update(path, is_full)
+        # Validate input
+        if path_or_paths is None:
+            self.log_message("[ERROR] Download selesai tapi tidak ada file yang tersimpan.")
+            messagebox.showerror("Error", "Download selesai tapi tidak ada file yang tersimpan.")
+            return
+        
+        if isinstance(path_or_paths, list) and len(path_or_paths) == 0:
+            self.log_message("[ERROR] Download selesai tapi patch kosong.")
+            messagebox.showerror("Error", "Download selesai tapi tidak ada patch yang tersimpan.")
+            return
+        
+        if is_full:
+            # Full update - single path
+            update_type = "Full Update"
+            self.log_message(f"[INFO] Download full update selesai: {path_or_paths}")
+            
+            if messagebox.askyesno("Update", 
+                f"Download selesai!\n\n"
+                f"Tipe: {update_type}\n\n"
+                f"Aplikasi akan ditutup dan diperbarui.\n"
+                f"Lanjutkan?"):
+                self._current_updater.apply_full_update(path_or_paths)
+            else:
+                self.log_message("[INFO] Update dibatalkan oleh user.")
         else:
-            self.log_message("[INFO] Update dibatalkan oleh user.")
+            # Sequential patches - list of paths
+            patch_count = len(path_or_paths) if isinstance(path_or_paths, list) else 1
+            update_type = f"Sequential Patch ({patch_count} file)"
+            self.log_message(f"[INFO] Download {patch_count} patch selesai!")
+            
+            if messagebox.askyesno("Update", 
+                f"Download selesai!\n\n"
+                f"Tipe: {update_type}\n\n"
+                f"Semua patch akan diterapkan secara berurutan.\n"
+                f"Aplikasi akan restart setelah semua patch diterapkan.\n\n"
+                f"Lanjutkan?"):
+                self._current_updater.apply_sequential_patches(path_or_paths)
+            else:
+                self.log_message("[INFO] Update dibatalkan oleh user.")
     
     def on_download_error(self, error_msg: str):
         """Handle download error."""
-        self.root.after(0, lambda: self.update_dialog.destroy())
+        def safe_destroy():
+            try:
+                if hasattr(self, 'update_dialog') and self.update_dialog.winfo_exists():
+                    self.update_dialog.destroy()
+            except Exception:
+                pass
+        
+        self.root.after(0, safe_destroy)
         self.log_message(f"[ERROR] Download gagal: {error_msg}")
         self.root.after(0, lambda: messagebox.showerror("Error", 
             f"Gagal mengunduh update:\n{error_msg}"))
@@ -1468,10 +1592,16 @@ class BackgroundRemoverApp:
     def cancel_update(self, updater):
         """Cancel ongoing update."""
         updater.cancel_download()
-        self.update_dialog.destroy()
+        try:
+            if hasattr(self, 'update_dialog') and self.update_dialog.winfo_exists():
+                self.update_dialog.destroy()
+        except Exception:
+            pass  # Dialog already destroyed
         self.log_message("[INFO] Download dibatalkan.")
 
 if __name__ == "__main__":
+    import subprocess
+    
     # Helper function to load app icon
     def get_app_icon_path():
         return os.path.join(os.path.dirname(__file__), "icon.png")
@@ -1488,16 +1618,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[WARN] Could not set icon: {e}")
     
-    # === CREATE PERSISTENT ROOT WINDOW (Hidden) ===
-    # This root window persists throughout the app lifecycle
-    # to prevent Tkinter state corruption after license dialog
-    root = tk.Tk()
-    root.withdraw()  # Hide initially
-    
-    # Track if license was just activated
-    _just_activated = False
-    _license_valid = False
-    
     # === 1. LICENSE CHECK ===
     try:
         from license_manager import LicenseManager
@@ -1507,86 +1627,83 @@ if __name__ == "__main__":
         is_valid, msg = lm.is_licensed()
         
         if not is_valid:
-            # Show license dialog as Toplevel of our persistent root
-            dialog = LicenseDialog(parent=root)
+            # LicenseDialog creates its own ttk.Window
+            dialog = LicenseDialog(parent=None)
             result = dialog.show()
             
             if not result:
-                root.destroy()
+                # User cancelled
                 sys.exit(0)
             
-            _just_activated = True
-            _license_valid = True
-        else:
-            _license_valid = True
+            # License just activated!
+            # CRITICAL: Restart the entire script to get fresh Tkinter state
+            # This is necessary because ttk.Window creates a Tk root that gets
+            # corrupted when destroyed. Spawning new process gives clean state.
+            print("[INFO] License activated. Restarting application...")
+            
+            # Get the script path (works for both .py and frozen .exe)
+            if getattr(sys, 'frozen', False):
+                # Running as compiled exe
+                subprocess.Popen([sys.executable])
+            else:
+                # Running as script
+                subprocess.Popen([sys.executable] + sys.argv)
+            
+            sys.exit(0)
                 
     except ImportError as e:
         print(f"[WARN] License module not found: {e}")
-        _license_valid = True  # Allow running without license module
     except Exception as e:
         print(f"[WARN] License check error: {e}")
-        _license_valid = True  # Allow running on error
     
-    # === 2. SPLASH SCREEN (Only if NOT just activated) ===
-    if not _just_activated:
-        # Create splash as Toplevel
-        splash = tk.Toplevel(root)
-        splash.overrideredirect(True)
-        
-        screen_width = splash.winfo_screenwidth()
-        screen_height = splash.winfo_screenheight()
-        splash_width, splash_height = 600, 350
-        x = (screen_width - splash_width) // 2
-        y = (screen_height - splash_height) // 2
-        splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
-        splash.configure(bg="white")
-        
-        try:
-            splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
-            splash_img = Image.open(splash_path)
-            splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
-            splash_photo = ImageTk.PhotoImage(splash_img)
-            img_label = tk.Label(splash, image=splash_photo, bg="white")
-            img_label.image = splash_photo
-            img_label.pack(pady=(40, 20))
-        except:
-            tk.Label(splash, text="ZI Advanced Background Remover", 
-                     font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
-        
-        tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
-                 fg="#666", bg="white").pack(pady=10)
-        
-        progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
-        progress_frame.pack(pady=10)
-        progress_frame.pack_propagate(False)
-        progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
-        progress_bar.place(x=0, y=0)
-        
-        tk.Label(splash, text=f"v{APP_VERSION} © 2026 ZI Advanced Background Remover", 
-                 font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
-        
-        def animate_splash(w=0):
-            if w <= 400:
-                progress_bar.configure(width=w)
-                splash.after(8, lambda: animate_splash(w + 5))
-            else:
-                splash.destroy()
-                show_main_app()
-        
-        def show_main_app():
-            # Destroy hidden root and create themed window for main app
-            root.destroy()
-            app = ttk.Window(themename="minty")
-            set_window_icon(app)
-            BackgroundRemoverApp(app)
-            app.mainloop()
-        
-        animate_splash()
-        root.mainloop()
-    else:
-        # User just activated license, skip splash and go directly to main app
-        root.destroy()
-        app = ttk.Window(themename="minty")
-        set_window_icon(app)
-        BackgroundRemoverApp(app)
-        app.mainloop()
+    # === 2. SPLASH SCREEN (Only shown when license already valid) ===
+    splash = tk.Tk()
+    splash.overrideredirect(True)
+    
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+    splash_width, splash_height = 600, 350
+    x = (screen_width - splash_width) // 2
+    y = (screen_height - splash_height) // 2
+    splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+    splash.configure(bg="white")
+    
+    try:
+        splash_path = os.path.join(os.path.dirname(__file__), "splash.jpg")
+        splash_img = Image.open(splash_path)
+        splash_img = splash_img.resize((500, 200), Image.Resampling.LANCZOS)
+        splash_photo = ImageTk.PhotoImage(splash_img)
+        img_label = tk.Label(splash, image=splash_photo, bg="white")
+        img_label.image = splash_photo
+        img_label.pack(pady=(40, 20))
+    except:
+        tk.Label(splash, text="ZI Advanced Background Remover", 
+                 font=("Segoe UI", 24, "bold"), fg="#2196F3", bg="white").pack(pady=60)
+    
+    tk.Label(splash, text="Memuat aplikasi...", font=("Segoe UI", 11), 
+             fg="#666", bg="white").pack(pady=10)
+    
+    progress_frame = tk.Frame(splash, bg="#e0e0e0", height=6, width=400)
+    progress_frame.pack(pady=10)
+    progress_frame.pack_propagate(False)
+    progress_bar = tk.Frame(progress_frame, bg="#2196F3", height=6, width=0)
+    progress_bar.place(x=0, y=0)
+    
+    tk.Label(splash, text=f"v{APP_VERSION} © 2026 ZI Advanced Background Remover", 
+             font=("Segoe UI", 8), fg="#999", bg="white").pack(side="bottom", pady=10)
+    
+    def animate_splash(w=0):
+        if w <= 400:
+            progress_bar.configure(width=w)
+            splash.after(8, lambda: animate_splash(w + 5))
+        else:
+            splash.destroy()
+    
+    animate_splash()
+    splash.mainloop()
+    
+    # === 3. MAIN APPLICATION ===
+    app = ttk.Window(themename="minty")
+    set_window_icon(app)
+    BackgroundRemoverApp(app)
+    app.mainloop()

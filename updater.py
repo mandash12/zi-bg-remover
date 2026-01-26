@@ -1,14 +1,14 @@
 """
 Auto Updater Module for ZI Background Remover
 ==============================================
-Supports both full updates and delta (incremental) updates.
+Supports both full updates and sequential patch updates.
 
-Delta Update Flow:
-1. Check version.json for new version
-2. Download remote manifest
-3. Compare with local files
-4. Download only changed files (patch zip)
-5. Apply changes and restart
+Sequential Update Flow:
+1. Check version.json for new version and patch chain
+2. Build patch path from current version to latest
+3. Download patches sequentially
+4. Apply all patches in one process
+5. Restart application once
 
 Usage:
     from updater import Updater
@@ -35,7 +35,10 @@ from packaging import version as pkg_version
 
 
 class Updater:
-    """Handles checking, downloading, and installing updates with delta support."""
+    """Handles checking, downloading, and installing updates with sequential patch support."""
+    
+    # Minimum version that supports patch updates
+    MIN_SUPPORTED_VERSION = "1.0.5"
     
     def __init__(self, version_url: str, current_version: str, app_folder: str = None):
         """
@@ -44,7 +47,7 @@ class Updater:
         Args:
             version_url: URL to the version.json file.
             current_version: The current version string (e.g., "1.0.0").
-            app_folder: Path to the application folder for delta updates.
+            app_folder: Path to the application folder for updates.
         """
         self.version_url = version_url
         self.current_version = current_version
@@ -78,11 +81,10 @@ class Updater:
             if pkg_version.parse(remote_version) > pkg_version.parse(self.current_version):
                 return True, {
                     'version': remote_version,
-                    'manifest_url': data.get('manifest_url', ''),
-                    'patch_base_url': data.get('patch_base_url', ''),
                     'full_url': data.get('full_url', ''),
                     'changelog': data.get('changelog', 'No changelog provided.'),
-                    'min_version_for_patch': data.get('min_version_for_patch', '0.0.0')
+                    'patches': data.get('patches', []),
+                    'min_supported_version': data.get('min_supported_version', self.MIN_SUPPORTED_VERSION)
                 }
             else:
                 return False, None
@@ -99,65 +101,110 @@ class Updater:
                 hash_func.update(chunk)
         return hash_func.hexdigest()
     
-    def get_local_manifest(self) -> dict:
-        """Generate manifest of local files."""
-        manifest = {"files": {}}
-        app_path = Path(self.app_folder)
+    def get_patch_chain(self, update_info: dict) -> list[dict] | None:
+        """
+        Build a chain of patches from current version to latest.
         
-        for filepath in app_path.rglob('*'):
-            if filepath.is_file():
-                rel_path = str(filepath.relative_to(app_path)).replace('\\', '/')
-                try:
-                    manifest["files"][rel_path] = {
-                        "hash": self._calculate_file_hash(str(filepath)),
-                        "size": filepath.stat().st_size
-                    }
-                except Exception:
-                    pass
+        Args:
+            update_info: Update info dict containing 'patches' list and 'version'.
+            
+        Returns:
+            List of patch dicts in order, or None if no valid chain exists.
+            
+        Example:
+            Current: 1.0.5, Latest: 1.0.8
+            Returns: [
+                {"from": "1.0.5", "to": "1.0.6", "url": "...", "size": 125000},
+                {"from": "1.0.6", "to": "1.0.7", "url": "...", "size": 98000},
+                {"from": "1.0.7", "to": "1.0.8", "url": "...", "size": 45000}
+            ]
+        """
+        patches = update_info.get('patches', [])
+        target_version = update_info.get('version')
+        min_supported = update_info.get('min_supported_version', self.MIN_SUPPORTED_VERSION)
         
-        return manifest
-    
-    def download_manifest(self, manifest_url: str) -> dict | None:
-        """Download remote manifest."""
-        try:
-            req = Request(manifest_url, headers={'User-Agent': 'ZI-BGRemover-Updater'})
-            with urlopen(req, timeout=30) as response:
-                return json.loads(response.read().decode('utf-8'))
-        except Exception as e:
-            print(f"[Updater] Error downloading manifest: {e}")
+        if not patches or not target_version:
             return None
-    
-    def compare_manifests(self, local: dict, remote: dict) -> dict:
-        """Compare local and remote manifests."""
-        local_files = local.get("files", {})
-        remote_files = remote.get("files", {})
         
-        result = {
-            "changed": [],
-            "new": [],
-            "deleted": [],
-            "download_size": 0
+        # Check if current version is too old for patch updates
+        if pkg_version.parse(self.current_version) < pkg_version.parse(min_supported):
+            print(f"[Updater] Version {self.current_version} is too old for patch updates (min: {min_supported})")
+            return None
+        
+        # Build patch lookup: from_version -> patch_info
+        patch_map = {}
+        for patch in patches:
+            from_ver = patch.get('from')
+            if from_ver:
+                patch_map[from_ver] = patch
+        
+        # Build chain from current to target
+        chain = []
+        current = self.current_version
+        max_iterations = 50  # Safety limit
+        
+        for _ in range(max_iterations):
+            if pkg_version.parse(current) >= pkg_version.parse(target_version):
+                break
+            
+            if current not in patch_map:
+                print(f"[Updater] No patch found from version {current}")
+                return None
+            
+            patch = patch_map[current]
+            chain.append(patch)
+            current = patch.get('to')
+            
+            if not current:
+                return None
+        
+        if not chain:
+            return None
+        
+        # Verify chain ends at target
+        last_patch = chain[-1]
+        if last_patch.get('to') != target_version:
+            print(f"[Updater] Patch chain doesn't reach target version {target_version}")
+            return None
+        
+        return chain
+    
+    def get_patch_chain_info(self, chain: list[dict]) -> dict:
+        """
+        Get information about a patch chain.
+        
+        Returns:
+            Dict with total_size, version_path, changelogs
+        """
+        total_size = sum(p.get('size', 0) for p in chain)
+        version_path = [chain[0].get('from', '?')]
+        changelogs = []
+        
+        for patch in chain:
+            version_path.append(patch.get('to', '?'))
+            if patch.get('changelog'):
+                changelogs.append(f"v{patch.get('to')}: {patch.get('changelog')}")
+        
+        return {
+            'total_size': total_size,
+            'version_path': version_path,
+            'version_path_str': ' → '.join(version_path),
+            'changelogs': changelogs,
+            'patch_count': len(chain)
         }
-        
-        for filepath, info in remote_files.items():
-            if filepath in local_files:
-                if local_files[filepath]["hash"] != info["hash"]:
-                    result["changed"].append(filepath)
-                    result["download_size"] += info["size"]
-            else:
-                result["new"].append(filepath)
-                result["download_size"] += info["size"]
-        
-        for filepath in local_files:
-            if filepath not in remote_files:
-                result["deleted"].append(filepath)
-        
-        return result
     
-    def can_use_delta_update(self, update_info: dict) -> bool:
-        """Check if delta update is possible."""
-        min_version = update_info.get('min_version_for_patch', '0.0.0')
-        return pkg_version.parse(self.current_version) >= pkg_version.parse(min_version)
+    def can_use_sequential_update(self, update_info: dict) -> tuple[bool, list | None, dict | None]:
+        """
+        Check if sequential patch update is possible.
+        
+        Returns:
+            Tuple of (can_use: bool, patch_chain: list or None, chain_info: dict or None)
+        """
+        chain = self.get_patch_chain(update_info)
+        if chain:
+            info = self.get_patch_chain_info(chain)
+            return True, chain, info
+        return False, None, None
     
     def download_file(self, url: str, dest_path: str, progress_callback=None) -> bool:
         """Download a file with progress callback."""
@@ -188,45 +235,60 @@ class Updater:
             print(f"[Updater] Download error: {e}")
             return False
     
-    def download_delta_update(self, update_info: dict, progress_callback=None) -> str | None:
+    def download_sequential_patches(self, patch_chain: list[dict], 
+                                     progress_callback=None,
+                                     step_callback=None) -> list[str] | None:
         """
-        Download delta update (only changed files).
+        Download all patches in the chain sequentially.
         
-        Returns path to downloaded patch zip, or None on failure.
+        Args:
+            patch_chain: List of patch dicts with 'url', 'from', 'to' keys
+            progress_callback: Called with (downloaded_bytes, total_bytes) for each file
+            step_callback: Called with (current_step, total_steps, from_ver, to_ver)
+            
+        Returns:
+            List of downloaded patch file paths, or None on failure
         """
-        try:
-            # Download remote manifest
-            remote_manifest = self.download_manifest(update_info['manifest_url'])
-            if not remote_manifest:
+        temp_dir = tempfile.gettempdir()
+        patch_dir = os.path.join(temp_dir, "zi_patches")
+        
+        # Clean up old patches
+        if os.path.exists(patch_dir):
+            shutil.rmtree(patch_dir)
+        os.makedirs(patch_dir)
+        
+        downloaded_patches = []
+        total_steps = len(patch_chain)
+        
+        for index, patch in enumerate(patch_chain):
+            if self._cancel_download:
                 return None
             
-            # Get local manifest
-            local_manifest = self.get_local_manifest()
+            from_ver = patch.get('from', '?')
+            to_ver = patch.get('to', '?')
+            url = patch.get('url')
             
-            # Compare
-            changes = self.compare_manifests(local_manifest, remote_manifest)
-            
-            if not changes["changed"] and not changes["new"]:
-                print("[Updater] No files to update.")
+            if not url:
+                print(f"[Updater] No URL for patch {from_ver} -> {to_ver}")
                 return None
             
-            # Construct patch URL
-            new_version = update_info['version']
-            patch_url = f"{update_info['patch_base_url']}/v{new_version}/patch_{self.current_version}_to_{new_version}.zip"
+            # Notify step progress
+            if step_callback:
+                step_callback(index + 1, total_steps, from_ver, to_ver)
             
             # Download patch
-            temp_dir = tempfile.gettempdir()
-            patch_path = os.path.join(temp_dir, f"zi_patch_{new_version}.zip")
+            patch_filename = f"patch_{from_ver}_to_{to_ver}.zip"
+            patch_path = os.path.join(patch_dir, patch_filename)
             
-            print(f"[Updater] Downloading patch: {patch_url}")
-            if self.download_file(patch_url, patch_path, progress_callback):
-                return patch_path
+            print(f"[Updater] Downloading patch {index + 1}/{total_steps}: {from_ver} -> {to_ver}")
             
-            return None
+            if not self.download_file(url, patch_path, progress_callback):
+                print(f"[Updater] Failed to download patch {from_ver} -> {to_ver}")
+                return None
             
-        except Exception as e:
-            print(f"[Updater] Delta update error: {e}")
-            return None
+            downloaded_patches.append(patch_path)
+        
+        return downloaded_patches
     
     def download_full_update(self, url: str, progress_callback=None) -> str | None:
         """Download full update zip."""
@@ -237,14 +299,134 @@ class Updater:
             return update_path
         return None
     
-    def apply_update(self, update_zip_path: str, is_full: bool = False):
+    def apply_sequential_patches(self, patch_files: list[str]):
         """
-        Apply update from zip file.
+        Apply multiple patches in sequence.
         Creates a batch script to:
         1. Wait for app to close
-        2. Extract zip to app folder
+        2. Extract each patch in order
         3. Restart app
         """
+        if not patch_files or len(patch_files) == 0:
+            print("[Updater] No patches to apply")
+            return
+        
+        # Validate all patch files exist and are valid zips
+        for patch_path in patch_files:
+            if not os.path.exists(patch_path):
+                print(f"[Updater] Patch file not found: {patch_path}")
+                return
+            try:
+                with zipfile.ZipFile(patch_path, 'r') as zf:
+                    if zf.testzip() is not None:
+                        print(f"[Updater] Corrupted patch file: {patch_path}")
+                        return
+            except zipfile.BadZipFile:
+                print(f"[Updater] Invalid zip file: {patch_path}")
+                return
+        
+        # Get paths
+        if getattr(sys, 'frozen', False):
+            current_exe = sys.executable
+            app_folder = os.path.dirname(current_exe)
+        else:
+            current_exe = os.path.abspath(sys.argv[0])
+            app_folder = os.path.dirname(current_exe)
+        
+        exe_name = os.path.basename(current_exe)
+        
+        # Build extraction commands for each patch
+        extract_commands = []
+        for i, patch_path in enumerate(patch_files):
+            extract_commands.append(f'''
+echo Applying patch {i + 1} of {len(patch_files)}...
+powershell -Command "Expand-Archive -Path '{patch_path}' -DestinationPath '{app_folder}' -Force"
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to apply patch {i + 1}!
+    pause
+    exit /b 1
+)
+''')
+        
+        # Create update script
+        batch_path = os.path.join(tempfile.gettempdir(), "zi_sequential_update.bat")
+        batch_content = f'''@echo off
+echo ========================================
+echo ZI Background Remover - Sequential Update
+echo ========================================
+echo.
+echo Applying {len(patch_files)} patches...
+echo.
+
+echo Waiting for application to close...
+ping 127.0.0.1 -n 3 > nul
+
+echo Force closing application...
+taskkill /F /IM "{exe_name}" 2>nul
+
+echo Waiting for process to fully terminate...
+:waitloop
+tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /i "{exe_name}" >nul
+if %ERRORLEVEL%==0 (
+    echo   Process still running, waiting...
+    ping 127.0.0.1 -n 2 > nul
+    goto waitloop
+)
+echo   Process terminated.
+echo.
+
+{"".join(extract_commands)}
+
+echo.
+echo ========================================
+echo   All patches applied successfully!
+echo ========================================
+echo.
+echo Starting application...
+ping 127.0.0.1 -n 2 > nul
+start "" "{current_exe}"
+
+echo Cleaning up...
+ping 127.0.0.1 -n 2 > nul
+rmdir /s /q "{os.path.dirname(patch_files[0])}"
+del /f /q "%~f0"
+'''
+        
+        with open(batch_path, 'w', encoding='utf-8') as f:
+            f.write(batch_content)
+        
+        print(f"[Updater] Created sequential update script: {batch_path}")
+        
+        # Launch updater with UAC prompt
+        try:
+            import ctypes
+            print(f"[Updater] Executing update script as Admin: {batch_path}")
+            
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, 
+                "runas", 
+                "cmd.exe", 
+                f'/c "{batch_path}"', 
+                None, 
+                1  # SW_SHOWNORMAL
+            )
+            
+            if ret <= 32:
+                raise Exception(f"ShellExecute failed with return code {ret}")
+                
+        except Exception as e:
+            print(f"[Updater] Failed to elevate, trying normal Popen: {e}")
+            subprocess.Popen(
+                ['cmd', '/c', batch_path],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                close_fds=True
+            )
+        
+        # Exit application
+        sys.exit(0)
+    
+    def apply_full_update(self, update_zip_path: str):
+        """Apply full update from zip file."""
         if not os.path.exists(update_zip_path):
             print(f"[Updater] Update file not found: {update_zip_path}")
             return
@@ -257,15 +439,13 @@ class Updater:
             current_exe = os.path.abspath(sys.argv[0])
             app_folder = os.path.dirname(current_exe)
         
-        # Create update script
-        batch_path = os.path.join(tempfile.gettempdir(), "zi_update.bat")
+        exe_name = os.path.basename(current_exe)
         
-        if is_full:
-            # Full update: backup old folder, extract new
-            exe_name = os.path.basename(current_exe)
-            batch_content = f'''@echo off
+        # Create update script
+        batch_path = os.path.join(tempfile.gettempdir(), "zi_full_update.bat")
+        batch_content = f'''@echo off
 echo ========================================
-echo ZI Background Remover - Installing Update
+echo ZI Background Remover - Full Update
 echo ========================================
 echo.
 
@@ -304,58 +484,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo ========================================
-echo   Update applied successfully!
-echo ========================================
-echo.
-echo Starting application...
-ping 127.0.0.1 -n 2 > nul
-start "" "{current_exe}"
-
-echo Cleaning up...
-ping 127.0.0.1 -n 2 > nul
-del /f /q "{update_zip_path}"
-del /f /q "%~f0"
-'''
-        else:
-            # Delta update: extract only changed files
-            exe_name = os.path.basename(current_exe)
-            batch_content = f'''@echo off
-echo ========================================
-echo ZI Background Remover - Applying Patch
-echo ========================================
-echo.
-
-echo Waiting for application to close...
-ping 127.0.0.1 -n 3 > nul
-
-echo Force closing application...
-taskkill /F /IM "{exe_name}" 2>nul
-
-echo Waiting for process to fully terminate...
-:waitloop
-tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /i "{exe_name}" >nul
-if %ERRORLEVEL%==0 (
-    echo   Process still running, waiting...
-    ping 127.0.0.1 -n 2 > nul
-    goto waitloop
-)
-echo   Process terminated.
-
-echo.
-echo Applying patch...
-powershell -Command "Expand-Archive -Path '{update_zip_path}' -DestinationPath '{app_folder}' -Force"
-
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo ERROR: Failed to apply patch!
-    echo Please close all ZI-BGRemover windows and try again.
-    pause
-    exit /b 1
-)
-
-echo.
-echo ========================================
-echo   Patch applied successfully!
+echo   Full update applied successfully!
 echo ========================================
 echo.
 echo Starting application...
@@ -371,72 +500,84 @@ del /f /q "%~f0"
         with open(batch_path, 'w', encoding='utf-8') as f:
             f.write(batch_content)
         
-        print(f"[Updater] Created update script: {batch_path}")
+        print(f"[Updater] Created full update script: {batch_path}")
         
-        # Launch updater and exit
-        # Launch updater with UAC prompt (Run as Administrator)
-        # This is critical for updating apps installed in Program Files
+        # Launch with UAC
         try:
             import ctypes
-            print(f"[Updater] Executing update script as Admin: {batch_path}")
-            
-            # ShellExecuteW(hwnd, operation, file, parameters, directory, show_cmd)
-            # operation "runas" prompts for UAC elevation
             ret = ctypes.windll.shell32.ShellExecuteW(
-                None, 
-                "runas", 
-                "cmd.exe", 
-                f'/c "{batch_path}"', 
-                None, 
-                1 # SW_SHOWNORMAL (show console so user sees progress)
+                None, "runas", "cmd.exe", f'/c "{batch_path}"', None, 1
             )
-            
             if ret <= 32:
-                # If ShellExecute failed, raise exception
-                raise Exception(f"ShellExecute failed with return code {ret}")
-                
+                raise Exception(f"ShellExecute failed: {ret}")
         except Exception as e:
-            print(f"[Updater] Failed to elevate, trying normal Popen: {e}")
-            # Fallback for non-admin installs or if execution fails
-            subprocess.Popen(
-                ['cmd', '/c', batch_path],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-                close_fds=True
-            )
+            print(f"[Updater] Fallback to normal Popen: {e}")
+            subprocess.Popen(['cmd', '/c', batch_path], 
+                           creationflags=subprocess.CREATE_NEW_CONSOLE, close_fds=True)
         
-        # Exit application to allow overwrite
         sys.exit(0)
     
     def cancel_download(self):
         """Cancel an ongoing download."""
         self._cancel_download = True
     
-    def download_and_apply_async(self, update_info: dict, use_delta: bool = True,
-                                  progress_callback=None, complete_callback=None, 
+    def download_and_apply_async(self, update_info: dict, 
+                                  progress_callback=None, 
+                                  step_callback=None,
+                                  complete_callback=None, 
                                   error_callback=None):
         """
         Download and apply update in background thread.
+        Automatically chooses sequential patches or full update.
+        
+        Args:
+            update_info: Dict from check_for_updates()
+            progress_callback: Called with (downloaded, total) for each file
+            step_callback: Called with (current_step, total_steps, from_ver, to_ver)
+            complete_callback: Called with (patch_files_or_path, is_full_update)
+            error_callback: Called with error message string
         """
         def worker():
             try:
-                update_path = None
-                is_full = False
+                # Check if sequential update is possible
+                can_use, patch_chain, chain_info = self.can_use_sequential_update(update_info)
                 
-                if use_delta and self.can_use_delta_update(update_info):
-                    print("[Updater] Attempting delta update...")
-                    update_path = self.download_delta_update(update_info, progress_callback)
-                
-                if not update_path:
-                    print("[Updater] Falling back to full update...")
-                    update_path = self.download_full_update(
-                        update_info['full_url'], 
-                        progress_callback
+                if can_use and patch_chain:
+                    print(f"[Updater] Using sequential update: {chain_info['version_path_str']}")
+                    print(f"[Updater] Total patches: {chain_info['patch_count']}, Total size: {chain_info['total_size']} bytes")
+                    
+                    patch_files = self.download_sequential_patches(
+                        patch_chain, 
+                        progress_callback,
+                        step_callback
                     )
-                    is_full = True
+                    
+                    if patch_files and len(patch_files) > 0:
+                        if complete_callback:
+                            complete_callback(patch_files, False)
+                        return
+                    else:
+                        print("[Updater] Sequential download failed, trying full update...")
                 
-                if update_path:
+                # Fallback to full update
+                full_url = update_info.get('full_url', '')
+                if not full_url:
+                    if error_callback:
+                        error_callback("No full update URL available and patch update failed.")
+                    return
+                
+                print("[Updater] Using full update...")
+                if step_callback:
+                    step_callback(1, 1, self.current_version, update_info.get('version', '?'))
+                
+                full_path = self.download_full_update(
+                    full_url, 
+                    progress_callback
+                )
+                
+                if full_path:
                     if complete_callback:
-                        complete_callback(update_path, is_full)
+                        complete_callback(full_path, True)
                 else:
                     if error_callback:
                         error_callback("Download failed or was cancelled.")
@@ -451,10 +592,11 @@ del /f /q "%~f0"
 
 # ==================== QUICK TEST ====================
 if __name__ == '__main__':
-    print("Updater Module with Delta Update Support")
+    print("ZI Updater Module with Sequential Patch Support")
     print("=" * 50)
     print("Features:")
-    print("  - Delta updates (download only changed files)")
-    print("  - Full updates (fallback)")
-    print("  - Manifest comparison")
-    print("  - Async download with progress")
+    print("  - Sequential patch updates (1.0.5 -> 1.0.6 -> 1.0.7 -> 1.0.8)")
+    print("  - Automatic patch chain detection")
+    print("  - Full update fallback for old versions")
+    print("  - Single restart after all patches applied")
+    print(f"  - Minimum supported version for patches: {Updater.MIN_SUPPORTED_VERSION}")
